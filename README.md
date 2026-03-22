@@ -1,4 +1,4 @@
-# n8n Personal Automation Hub
+# nodeApp (n8n) Personal Automation Hub
 
 This directory contains the configuration and workflows for a locally-hosted [n8n](https://n8n.io/) instance running via Docker, specifically tailored to automate personal tasks like transcribing and organizing voice memos into Notion.
 
