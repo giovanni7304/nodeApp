@@ -1,0 +1,222 @@
+{
+  "name": "Voice Memo to Notion",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "VoiceMemo",
+        "options": {}
+      },
+      "id": "c96bbe46-6c4f-4e37-99d4-053e99f07da3",
+      "name": "iOS Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "VoiceMemo"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Grab the base64 string from the \"voice\" key\nlet base64Data = $input.item.json.body.voice;\n\nif (!base64Data) {\n  throw new Error('No audio base64 data found in request. Check your Webhook output again.');\n}\n\n// Just in case iOS appended a mime-type prefix like \"data:audio/m4a;base64,\" \nif (base64Data.includes(',')) {\n  base64Data = base64Data.split(',')[1];\n}\n\n// Convert the base64 string into a true memory Buffer\nconst buffer = Buffer.from(base64Data, 'base64');\n\n// Use n8n's official internal helper to construct the file attachment\nconst binaryData = await this.helpers.prepareBinaryData(buffer, 'memo.m4a', 'audio/m4a');\n\nreturn {\n  json: $input.item.json,\n  binary: {\n    data: binaryData\n  }\n};\n\n"
+      },
+      "id": "5b93a950-9972-4105-9104-257bb0f78ec6",
+      "name": "Base64 to Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "prompt": "=You are a personal assistant that organizes voice memos. Read the provided transcription and extract the following details into JSON format exactly:\n{\n  \"Type\": \"Journal\",\n  \"Date\": \"YYYY-MM-DD\",\n  \"Created Time\": \"HH:mm\",\n  \"Focus area\": \"Personal\",\n  \"Mood\": \"Neutral\",\n  \"Significance\": \"Medium\",\n  \"Source\": \"Voice Memo\",\n  \"Summary\": \"A short paragraph summarizing the memo\"\n\"Title\": \"Title Depicting the voice memo\"\n\"Full Message\": \"Entire text message\"\n}\n\nHere is the transcription:\n={{ $json.text }}\n",
+        "options": {
+          "maxTokens": 1000
+        },
+        "requestOptions": {}
+      },
+      "id": "1b9fabad-b32d-4660-a66a-2ae90c526999",
+      "name": "Extract JSON",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        608,
+        0
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "FFOh5hfhcOxMpSFR",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Grab the \"text\" string from the Whisper/ChatGPT output\nlet content = $input.item.json.text; \n\n// (Fallback for other node versions)\nif (!content && $input.item.json.message && $input.item.json.message.content) {\n   content = $input.item.json.message.content;\n}\n\n// 2. Clean out any Markdown or extra junk\nif (content.startsWith(\"```json\")) {\n   content = content.replace(/^```json\\n/, \"\"); // Remove start\n   content = content.replace(/```$/, \"\");       // Remove end\n}\ncontent = content.trim();\n\n// 3. Format it for Notion by parsing the string into a real object\nconst structuredData = JSON.parse(content);\n\n// 4. Output the structured fields\nreturn { json: structuredData };\n"
+      },
+      "id": "640d0cb3-8cb4-4b97-916c-bd70f92f9a43",
+      "name": "Parse JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "5f32733b-0914-4415-92fb-772c4fbfb4ff",
+      "name": "Transcribe a recording",
+      "credentials": {
+        "openAiApi": {
+          "id": "FFOh5hfhcOxMpSFR",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "22701f30-3e13-806e-aec6-f35a2a055f4d",
+          "mode": "list",
+          "cachedResultName": "Journal",
+          "cachedResultUrl": "https://www.notion.so/22701f303e13806eaec6f35a2a055f4d"
+        },
+        "title": "={{ $json.Title }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Focus Area|rich_text",
+              "textContent": "={{ $json[\"Focus area\"] }}"
+            },
+            {
+              "key": "Mood|rich_text",
+              "textContent": "={{ $json.Mood }}"
+            },
+            {
+              "key": "Significance|rich_text",
+              "textContent": "={{ $json.Significance }}"
+            },
+            {
+              "key": "Source|rich_text",
+              "textContent": "={{ $json.Source }}"
+            },
+            {
+              "key": "Summary|rich_text",
+              "textContent": "={{ $json[\"Full Message\"] }}"
+            },
+            {
+              "key": "Title|title",
+              "title": "={{ $json.Title }}"
+            },
+            {
+              "key": "Type|rich_text",
+              "textContent": "={{ $json.Type }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "b91dcbfb-9a07-4efd-bd55-7f46a2835e5f",
+      "name": "Create a database page",
+      "credentials": {
+        "notionApi": {
+          "id": "y8eVBKsKx01n8jEG",
+          "name": "Notion account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "iOS Webhook": {
+      "main": [
+        [
+          {
+            "node": "Base64 to Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Base64 to Binary": {
+      "main": [
+        [
+          {
+            "node": "Transcribe a recording",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract JSON": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON": {
+      "main": [
+        [
+          {
+            "node": "Create a database page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe a recording": {
+      "main": [
+        [
+          {
+            "node": "Extract JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "9c6c2c0c-1ed4-4bcd-b2c0-6a4f6a6330fb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f6dbeaa2badea8b0403f35dbd9159848e0cc888684750f9a9a4e5c94f7ffd927"
+  },
+  "id": "dtP1C_Ul6ZTia2ZzbU9PB",
+  "tags": []
+}
