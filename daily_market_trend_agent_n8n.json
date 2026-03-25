@@ -1,0 +1,294 @@
+{
+  "name": "Daily Market Trend Agent - SPX VIX News to Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "2a588bd2-32c7-44d3-a60a-765a70f437dd",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const POLYGON_API_KEY = 'REPLACE_WITH_POLYGON_API_KEY';\nconst MARKETAUX_API_TOKEN = 'REPLACE_WITH_MARKETAUX_API_TOKEN';\nconst TELEGRAM_BOT_TOKEN = 'REPLACE_WITH_TELEGRAM_BOT_TOKEN';\nconst TELEGRAM_CHAT_ID = 'REPLACE_WITH_TELEGRAM_CHAT_ID';\n\n// Stop execution early if placeholders were not updated.\nfor (const [key, value] of Object.entries({\n  POLYGON_API_KEY,\n  MARKETAUX_API_TOKEN,\n  TELEGRAM_BOT_TOKEN,\n  TELEGRAM_CHAT_ID,\n})) {\n  if (String(value).startsWith('REPLACE_WITH_')) {\n    throw new Error(`Please update ${key} in the \"Build Request URLs\" Code node before activating this workflow.`);\n  }\n}\n\nfunction ymd(date) {\n  return date.toISOString().slice(0, 10);\n}\n\nfunction shiftDays(base, days) {\n  const d = new Date(base);\n  d.setUTCDate(d.getUTCDate() + days);\n  return d;\n}\n\nfunction aggUrl(symbol, timespan, fromDate, toDate) {\n  const encoded = encodeURIComponent(symbol);\n  return `https://api.polygon.io/v2/aggs/ticker/${encoded}/range/1/${timespan}/${ymd(fromDate)}/${ymd(toDate)}?adjusted=true&sort=asc&limit=50000&apiKey=${POLYGON_API_KEY}`;\n}\n\nconst now = new Date();\nconst spx = 'I:SPX';\nconst vix = 'I:VIX';\n\nconst hourlyFrom = shiftDays(now, -75);   // enough history for recent hourly regime\nconst dailyFrom  = shiftDays(now, -450);  // about 18 months\nconst weeklyFrom = shiftDays(now, -365 * 6);\n\nconst publishedAfter = new Date(now.getTime() - (36 * 60 * 60 * 1000)).toISOString().slice(0, 16);\nconst marketSearch = '(\"S&P 500\"|SPX|VIX|\"Federal Reserve\"|inflation|yields|earnings)';\nconst newsUrl =\n  'https://api.marketaux.com/v1/news/all'\n  + `?api_token=${MARKETAUX_API_TOKEN}`\n  + '&language=en'\n  + '&countries=us'\n  + '&must_have_entities=true'\n  + '&group_similar=true'\n  + '&filter_entities=false'\n  + '&limit=3'\n  + `&search=${encodeURIComponent(marketSearch)}`\n  + `&published_after=${encodeURIComponent(publishedAfter)}`;\n\nreturn [{\n  json: {\n    polygonApiKey: POLYGON_API_KEY,\n    marketauxApiToken: MARKETAUX_API_TOKEN,\n    telegramBotToken: TELEGRAM_BOT_TOKEN,\n    telegramChatId: TELEGRAM_CHAT_ID,\n    scheduleTimezone: 'America/Chicago',\n    spxHourlyUrl: aggUrl(spx, 'hour', hourlyFrom, now),\n    spxDailyUrl: aggUrl(spx, 'day', dailyFrom, now),\n    spxWeeklyUrl: aggUrl(spx, 'week', weeklyFrom, now),\n    vixHourlyUrl: aggUrl(vix, 'hour', hourlyFrom, now),\n    vixDailyUrl: aggUrl(vix, 'day', dailyFrom, now),\n    vixWeeklyUrl: aggUrl(vix, 'week', weeklyFrom, now),\n    newsUrl\n  }\n}];"
+      },
+      "id": "e814d3d1-5d80-49e2-9dd4-02e19ef92082",
+      "name": "Build Request URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.spxHourlyUrl }}",
+        "options": {}
+      },
+      "id": "96154637-7661-449f-bf51-895d8d9cc4e8",
+      "name": "Get SPX Hourly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Build Request URLs').first().json.spxDailyUrl }}",
+        "options": {}
+      },
+      "id": "db042309-a705-4177-ac04-7f9aeb5119da",
+      "name": "Get SPX Daily",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Build Request URLs').first().json.spxWeeklyUrl }}",
+        "options": {}
+      },
+      "id": "26f697cc-02ca-45fd-b0ac-fae5393e9f07",
+      "name": "Get SPX Weekly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Build Request URLs').first().json.vixHourlyUrl }}",
+        "options": {}
+      },
+      "id": "5dcf3cba-1b65-43a6-8f3b-2134a78e85df",
+      "name": "Get VIX Hourly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Build Request URLs').first().json.vixDailyUrl }}",
+        "options": {}
+      },
+      "id": "d096a973-20e5-4208-ba3b-3a70a2e1c602",
+      "name": "Get VIX Daily",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Build Request URLs').first().json.vixWeeklyUrl }}",
+        "options": {}
+      },
+      "id": "a5bde5be-7d27-4868-911a-dbd56f084087",
+      "name": "Get VIX Weekly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Build Request URLs').first().json.newsUrl }}",
+        "options": {}
+      },
+      "id": "892a9679-74d1-4fda-8d43-213015d13bb4",
+      "name": "Get Market News",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function firstJson(nodeName) {\n  return $(nodeName).first().json;\n}\n\nfunction getBars(nodeName) {\n  const payload = firstJson(nodeName);\n  return Array.isArray(payload.results) ? payload.results : [];\n}\n\nfunction toCloses(bars) {\n  return bars\n    .filter(b => b && typeof b.c === 'number')\n    .map(b => ({ t: b.t, c: b.c }));\n}\n\nfunction returnsFromBars(bars) {\n  const closes = toCloses(bars);\n  const out = [];\n  for (let i = 1; i < closes.length; i++) {\n    const prev = closes[i - 1].c;\n    const cur = closes[i].c;\n    if (prev > 0 && Number.isFinite(cur) && Number.isFinite(prev)) {\n      out.push((cur / prev) - 1);\n    }\n  }\n  return out;\n}\n\nfunction mean(arr) {\n  if (!arr.length) return 0;\n  return arr.reduce((a, b) => a + b, 0) / arr.length;\n}\n\nfunction std(arr) {\n  if (arr.length < 2) return 0;\n  const m = mean(arr);\n  const v = arr.reduce((s, x) => s + Math.pow(x - m, 2), 0) / (arr.length - 1);\n  return Math.sqrt(Math.max(v, 0));\n}\n\nfunction clamp(x, lo, hi) {\n  return Math.min(hi, Math.max(lo, x));\n}\n\nfunction momentumZ(bars, lookbackBars, volWindowBars) {\n  const closes = toCloses(bars);\n  const rets = returnsFromBars(bars);\n  if (closes.length < lookbackBars + 1 || rets.length < volWindowBars) return 0;\n  const latest = (closes[closes.length - 1].c / closes[closes.length - 1 - lookbackBars].c) - 1;\n  const vol = std(rets.slice(-volWindowBars)) * Math.sqrt(Math.max(lookbackBars, 1));\n  if (!Number.isFinite(vol) || vol <= 1e-9) return 0;\n  return clamp(latest / vol, -3, 3);\n}\n\nfunction latestClose(bars) {\n  const closes = toCloses(bars);\n  return closes.length ? closes[closes.length - 1].c : null;\n}\n\nfunction normalCdf(x) {\n  // Abramowitz-Stegun approximation\n  const sign = x < 0 ? -1 : 1;\n  const z = Math.abs(x) / Math.sqrt(2);\n  const t = 1 / (1 + 0.3275911 * z);\n  const a1 = 0.254829592;\n  const a2 = -0.284496736;\n  const a3 = 1.421413741;\n  const a4 = -1.453152027;\n  const a5 = 1.061405429;\n  const erf = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-z * z);\n  return 0.5 * (1 + sign * erf);\n}\n\nfunction pct(x) {\n  return `${(x * 100).toFixed(2)}%`;\n}\n\nconst config = firstJson('Build Request URLs');\n\nconst spxHourly = getBars('Get SPX Hourly');\nconst spxDaily = getBars('Get SPX Daily');\nconst spxWeekly = getBars('Get SPX Weekly');\nconst vixHourly = getBars('Get VIX Hourly');\nconst vixDaily = getBars('Get VIX Daily');\nconst vixWeekly = getBars('Get VIX Weekly');\nconst newsPayload = firstJson('Get Market News');\nconst newsItems = Array.isArray(newsPayload.data) ? newsPayload.data : [];\n\nif (spxDaily.length < 30 || vixDaily.length < 30) {\n  throw new Error('Not enough SPX/VIX history returned. Check your API keys/plan and symbol support.');\n}\n\n// Momentum / regime features from requested timeframes\nconst spxH = momentumZ(spxHourly, 6, 48);   // ~6 trading hours vs 2 trading days of hourly vol\nconst spxD = momentumZ(spxDaily, 5, 20);    // 1 week move\nconst spxW = momentumZ(spxWeekly, 4, 26);   // 1 month move\nconst vixH = momentumZ(vixHourly, 6, 48);\nconst vixD = momentumZ(vixDaily, 5, 20);\nconst vixW = momentumZ(vixWeekly, 4, 26);\n\n// News sentiment: average across identified entities where available\nconst articleSentiments = newsItems.map(article => {\n  const vals = Array.isArray(article.entities)\n    ? article.entities\n        .map(e => typeof e.sentiment_score === 'number' ? e.sentiment_score : null)\n        .filter(v => v !== null)\n    : [];\n  return vals.length ? mean(vals) : 0;\n});\nconst newsSentiment = articleSentiments.length ? mean(articleSentiments) : 0;\n\n// Daily volatility baseline, adjusted by VIX level\nconst spxDailyReturns = returnsFromBars(spxDaily);\nconst baseSigma = std(spxDailyReturns.slice(-20)); // 20-day realized sigma\nconst latestVix = latestClose(vixDaily) ?? 20;\nconst vixRegimeMult = clamp(latestVix / 20, 0.70, 1.80);\nconst sigma = Math.max(baseSigma * vixRegimeMult, 0.003);\n\n// Weighted directional score\nconst compositeScore =\n  (0.40 * spxH) +\n  (0.35 * spxD) +\n  (0.25 * spxW) -\n  (0.25 * vixH) -\n  (0.20 * vixD) -\n  (0.10 * vixW) +\n  (0.20 * (newsSentiment * 3));\n\n// Convert score into bounded expected return (mu)\nconst mu = Math.tanh(compositeScore / 4) * (0.60 * sigma);\n\n// 1-sigma regime probabilities around flat return: Down < -\u03c3, Sideways in [-\u03c3,+\u03c3], Up > +\u03c3\nconst pDown = normalCdf((-sigma - mu) / sigma);\nconst pUp = 1 - normalCdf((sigma - mu) / sigma);\nconst pSideways = Math.max(0, 1 - pDown - pUp);\n\n// Label\nconst probs = [\n  { label: 'UP', value: pUp },\n  { label: 'SIDEWAYS', value: pSideways },\n  { label: 'DOWN', value: pDown },\n].sort((a, b) => b.value - a.value);\n\nconst topLabel = probs[0].label;\nconst topProb = probs[0].value;\n\n// Headlines\nconst headlines = newsItems.slice(0, 3).map((article, idx) => {\n  const title = article.title || 'Untitled';\n  const source = article.source || 'unknown source';\n  return `${idx + 1}. ${title} (${source})`;\n});\n\nconst summaryLines = [\n  `Daily Market Trend Agent`,\n  `${new Date().toISOString().slice(0, 10)}`,\n  ``,\n  `Prediction: ${topLabel} (${pct(topProb)})`,\n  `1\u03c3 probabilities:`,\n  `\u2022 Up: ${pct(pUp)}`,\n  `\u2022 Sideways: ${pct(pSideways)}`,\n  `\u2022 Down: ${pct(pDown)}`,\n  ``,\n  `Model stats:`,\n  `\u2022 Expected next-day move (mu): ${pct(mu)}`,\n  `\u2022 1\u03c3 next-day band: \u00b1${pct(sigma)}`,\n  `\u2022 VIX close: ${latestVix.toFixed(2)}`,\n  `\u2022 News sentiment: ${newsSentiment.toFixed(3)}`,\n  ``,\n  `Signals:`,\n  `\u2022 SPX hourly z-score: ${spxH.toFixed(2)}`,\n  `\u2022 SPX daily z-score: ${spxD.toFixed(2)}`,\n  `\u2022 SPX weekly z-score: ${spxW.toFixed(2)}`,\n  `\u2022 VIX hourly z-score: ${vixH.toFixed(2)}`,\n  `\u2022 VIX daily z-score: ${vixD.toFixed(2)}`,\n  `\u2022 VIX weekly z-score: ${vixW.toFixed(2)}`,\n  ``,\n  `Latest market headlines:`,\n  ...(headlines.length ? headlines : ['No recent market headlines returned.']),\n];\n\nconst telegramText = summaryLines.join('\\n');\nconst telegramUrl =\n  `https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`\n  + `?chat_id=${encodeURIComponent(config.telegramChatId)}`\n  + `&text=${encodeURIComponent(telegramText)}`;\n\nreturn [{\n  json: {\n    prediction_date: new Date().toISOString(),\n    trend_label: topLabel,\n    probabilities: {\n      up: Number(pUp.toFixed(6)),\n      sideways: Number(pSideways.toFixed(6)),\n      down: Number(pDown.toFixed(6)),\n    },\n    thresholds: {\n      one_sigma_band: Number(sigma.toFixed(6)),\n      expected_return_mu: Number(mu.toFixed(6)),\n    },\n    features: {\n      spx_hourly_z: Number(spxH.toFixed(4)),\n      spx_daily_z: Number(spxD.toFixed(4)),\n      spx_weekly_z: Number(spxW.toFixed(4)),\n      vix_hourly_z: Number(vixH.toFixed(4)),\n      vix_daily_z: Number(vixD.toFixed(4)),\n      vix_weekly_z: Number(vixW.toFixed(4)),\n      latest_vix: Number(latestVix.toFixed(4)),\n      news_sentiment: Number(newsSentiment.toFixed(4)),\n      composite_score: Number(compositeScore.toFixed(4)),\n    },\n    headlines,\n    telegram_text: telegramText,\n    telegram_url: telegramUrl,\n    notes: [\n      'This workflow is a statistical signal, not investment advice.',\n      'Up/Sideways/Down are defined relative to a \u00b11\u03c3 next-day return band around zero.',\n      'Hourly, daily, and weekly SPX/VIX inputs are blended with recent news sentiment.'\n    ]\n  }\n}];"
+      },
+      "id": "e15ed969-ce1e-491d-bebf-5aba064c5a11",
+      "name": "Score Market",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.telegram_url }}",
+        "options": {}
+      },
+      "id": "00e1a3ec-3849-44f4-986f-07c00cec245c",
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Request URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Request URLs": {
+      "main": [
+        [
+          {
+            "node": "Get SPX Hourly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get SPX Hourly": {
+      "main": [
+        [
+          {
+            "node": "Get SPX Daily",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get SPX Daily": {
+      "main": [
+        [
+          {
+            "node": "Get SPX Weekly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get SPX Weekly": {
+      "main": [
+        [
+          {
+            "node": "Get VIX Hourly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get VIX Hourly": {
+      "main": [
+        [
+          {
+            "node": "Get VIX Daily",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get VIX Daily": {
+      "main": [
+        [
+          {
+            "node": "Get VIX Weekly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get VIX Weekly": {
+      "main": [
+        [
+          {
+            "node": "Get Market News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Market News": {
+      "main": [
+        [
+          {
+            "node": "Score Market",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Market": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Chicago"
+  },
+  "active": false,
+  "versionId": "a8d983bb-70ed-4cff-8094-be23a7163ac9",
+  "tags": []
+}
